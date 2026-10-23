@@ -187,6 +187,20 @@ final class ParserTests: XCTestCase {
         XCTAssertTrue(none.rollSlots.isEmpty)
     }
 
+    func testOfficeTraysAreNotRolls() {
+        var input = PrinterOption(key: "InputSlot", label: "Paper Source")
+        input.choices = [
+            OptionChoice(keyword: "AutoSelect", label: "Auto Select"),
+            OptionChoice(keyword: "Tray1", label: "Tray 1"),
+            OptionChoice(keyword: "Tray2", label: "Tray 2"),
+            OptionChoice(keyword: "MPTray", label: "MP Tray"),
+            OptionChoice(keyword: "Manual", label: "Manual Feed"),
+        ]
+        let brother = PrinterOptions(groups: [OptionGroup(name: "General", label: "General", options: [input])],
+                                     source: "", ppdText: nil)
+        XCTAssertTrue(brother.rollSlots.isEmpty, "A Brother laser's trays must not show the Rolls tab")
+    }
+
     func testRollQueueHelpers() {
         var base = Printer(name: "DYMO_Twin")
         base.makeAndModel = "DYMO LabelWriter 450 Twin Turbo"

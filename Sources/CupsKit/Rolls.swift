@@ -26,14 +26,22 @@ public struct RollQueue: Identifiable, Hashable, Sendable {
 }
 
 public extension PrinterOptions {
-    /// The rolls this printer can pick between (excluding automatic switching).
+    /// The label rolls this printer can pick between (excluding automatic
+    /// switching). Only sources that are actually rolls count: a Twin Turbo's
+    /// "Left Roll" / "Right Roll", not an office printer's Tray 1 / Tray 2 /
+    /// Manual Feed, which also use InputSlot.
     var rollSlots: [RollSlot] {
         guard let opt = all.first(where: { $0.key == "InputSlot" }) else { return [] }
-        let skip: Set<String> = ["auto", "autoselect", "default", "automatic"]
         let slots = opt.choices
-            .filter { !skip.contains($0.keyword.lowercased()) }
+            .filter { Self.isRoll($0) }
             .map { RollSlot(keyword: $0.keyword, label: $0.label) }
         return slots.count >= 2 ? slots : []
+    }
+
+    static func isRoll(_ c: OptionChoice) -> Bool {
+        let text = (c.keyword + " " + c.label).lowercased()
+        if text.contains("auto") { return false }
+        return text.contains("roll") || ["left", "right"].contains(c.keyword.lowercased())
     }
 
     var pageSizeOption: PrinterOption? { all.first { $0.key == "PageSize" } }
