@@ -1,0 +1,5 @@
+printer DYMO_4XL is idle.  enabled since Fri Oct 23 09:26:13 2026
+printer Office_Laser is idle.  enabled since Fri Oct 23 09:26:14 2026
+	Maintenance
+printer Zebra_ZPL disabled since Fri Oct 23 09:26:27 2026 -
+	Out of labels

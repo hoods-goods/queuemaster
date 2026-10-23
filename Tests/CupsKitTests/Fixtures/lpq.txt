@@ -1,0 +1,4 @@
+Zebra_ZPL is not ready
+Rank    Owner   Job     File(s)                         Total Size
+1st     root    1       Test label                      1024 bytes
+2nd     root    2       held job                        1024 bytes

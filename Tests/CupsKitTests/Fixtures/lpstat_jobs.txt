@@ -1,0 +1,6 @@
+Zebra_ZPL-1             root              1024   Fri Oct 23 09:26:27 2026
+	Alerts: none
+	queued for Zebra_ZPL
+Zebra_ZPL-2             root              1024   Fri Oct 23 09:26:27 2026
+	Alerts: job-hold-until-specified
+	queued for Zebra_ZPL

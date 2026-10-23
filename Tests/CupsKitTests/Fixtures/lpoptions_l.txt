@@ -1,0 +1,10 @@
+PageSize/Media Size: A4 A5 A5Rotated w90h18 w90h162 w108h18 w108h36 w108h72 w108h144 w142h227 w144h26 w144h36 w144h72 w144h90 w144h288 w144h396 w162h36 w162h90 w162h288 w162h396 w171h396 w180h72 w180h144 w198h90 w216h72 w216h90 w216h144 w216h288 w216h216 w216h360 w216h432 w216h576 w234h144 w234h360 w234h396 w234h419 w234h563 w252h72 w288h72 w288h144 w288h180 w288h216 w288h288 *w288h360 w288h432 w288h468 w288h576 w288h936 w432h72 w432h144 w432h216 w432h288 w432h360 w432h432 w432h468 w432h576 w576h72 w576h144 w576h216 w576h288 w576h360 w576h432 w576h468 w595h72 Custom.WIDTHxHEIGHT
+Resolution/Resolution: *203dpi 300dpi 600dpi
+zeMediaTracking/Media Tracking: Continuous *Web Mark
+MediaType/Media Type: *Saved Thermal Direct
+Darkness/Darkness: *-1 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+zePrintRate/Print Rate: *Default 1 2 3 4 5 6 7 8 9 10 11 12
+zeLabelTop/Label Top: *200 -120 -115 -110 -105 -100 -95 -90 -85 -80 -75 -70 -65 -60 -55 -50 -45 -40 -35 -30 -25 -20 -15 -10 -5 0 5 10 15 20 25 30 35 40 45 50 55 60 65 70 75 80 85 90 95 100 105 110 115 120
+zePrintMode/Print Mode: *Saved Tear Peel Rewind Applicator Cutter
+zeTearOffPosition/Tear-Off Adjust Position: *1000 -120 -115 -110 -105 -100 -95 -90 -85 -80 -75 -70 -65 -60 -55 -50 -45 -40 -35 -30 -25 -20 -15 -10 -5 0 5 10 15 20 25 30 35 40 45 50 55 60 65 70 75 80 85 90 95 100 105 110 115 120
+zeErrorReprint/Reprint After Error: *Saved Always Never

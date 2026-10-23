@@ -1,0 +1,3 @@
+device for DYMO_4XL: socket://192.168.1.50:9100
+device for Office_Laser: ipp://10.0.0.5/ipp/print
+device for Zebra_ZPL: socket://10.0.0.20
