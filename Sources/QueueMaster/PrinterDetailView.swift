@@ -6,6 +6,7 @@ import CupsKit
 enum PrinterTab: String, CaseIterable, Identifiable {
     case jobs = "Queue"
     case options = "Options"
+    case rolls = "Rolls"
     case settings = "Settings"
     case attributes = "Attributes"
     var id: String { rawValue }
@@ -23,6 +24,8 @@ struct PrinterDetailView: View {
     @State private var showRename = false
     @State private var showTextPrint = false
     @State private var info: String?
+    /// The driver offers more than one roll (DYMO Twin Turbo).
+    @State private var hasRolls = false
 
     private var printer: Printer? { model.printer(named: printerName) }
 
@@ -34,7 +37,7 @@ struct PrinterDetailView: View {
                     .padding(.top, 16)
                     .padding(.bottom, 12)
                 Picker("", selection: $tab) {
-                    ForEach(PrinterTab.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(PrinterTab.allCases.filter { $0 != .rolls || hasRolls }) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -44,12 +47,18 @@ struct PrinterDetailView: View {
                 switch tab {
                 case .jobs: JobsView(printerName: p.name)
                 case .options: OptionsView(printerName: p.name)
+                case .rolls: RollsView(printer: p)
                 case .settings: PrinterSettingsView(printer: p)
                 case .attributes: AttributesView(printer: p)
                 }
             }
             .navigationTitle(p.displayName)
             .navigationSubtitle(p.name)
+            .task(id: p.name) {
+                let opts = try? await model.cups.options(for: p.name)
+                hasRolls = !(opts?.rollSlots.isEmpty ?? true)
+                if !hasRolls && tab == .rolls { tab = .jobs }
+            }
             .alert("Pause \(p.displayName)", isPresented: $askPauseReason) {
                 TextField("Reason (optional)", text: $reason)
                 Button("Pause") { run("Pausing") { try await model.cups.pause(p.name, reason: reason) } }

@@ -166,4 +166,38 @@ final class ParserTests: XCTestCase {
                         "-D", "Zebra ZD421", "-o", "printer-is-shared=false"])
         XCTAssertEqual(CupsClient.setOptionArguments("Z", ["b": "2", "a": "1"]), ["-p", "Z", "-o", "a=1", "-o", "b=2"])
     }
+    // MARK: Twin Turbo rolls
+
+    func testTwinTurboRolls() throws {
+        let groups = Parsers.ppd(try fixture("dymo_twin_turbo.ppd"))
+        let opts = PrinterOptions(groups: groups, source: "PPD file", ppdText: nil)
+        XCTAssertEqual(opts.rollSlots.map(\.keyword), ["Left", "Right"])
+        XCTAssertEqual(opts.rollSlots.map(\.label), ["Left Roll", "Right Roll"])
+        XCTAssertEqual(opts.queueDefault("InputSlot"), "Auto")
+        XCTAssertEqual(opts.queueDefault("PageSize"), "w167h288")
+        XCTAssertEqual(opts.pageSizeOption?.choices.first?.label, "11351 Jewelry Label")
+        XCTAssertNil(opts.all.first { $0.key == "InputSlot" }?.choices.first { $0.keyword.hasPrefix("de.") })
+
+        let single = PrinterOptions(groups: Parsers.ppd(try fixture("dymo.ppd")), source: "", ppdText: nil)
+        // The CUPS sample DYMO driver also covers the Twin (Roll / Roll2).
+        XCTAssertEqual(single.rollSlots.map(\.keyword), ["Roll", "Roll2"])
+        let none = PrinterOptions(groups: Parsers.ppd(try fixture("dymo.ppd")).map { g in
+            OptionGroup(name: g.name, label: g.label, options: g.options.filter { $0.key != "InputSlot" })
+        }, source: "", ppdText: nil)
+        XCTAssertTrue(none.rollSlots.isEmpty)
+    }
+
+    func testRollQueueHelpers() {
+        var base = Printer(name: "DYMO_Twin")
+        base.makeAndModel = "DYMO LabelWriter 450 Twin Turbo"
+        base.deviceURI = "usb://DYMO/LabelWriter%20450%20Twin%20Turbo?serial=1"
+        var left = Printer(name: "DYMO_Inventory"); left.deviceURI = base.deviceURI + "/"
+        var other = Printer(name: "Zebra"); other.deviceURI = "socket://10.0.0.20:9100"
+        XCTAssertEqual(CupsClient.siblings(of: base, in: [base, left, other]).map(\.name), ["DYMO_Inventory"])
+
+        let slot = RollSlot(keyword: "Left", label: "Left Roll")
+        XCTAssertEqual(CupsClient.suggestedRollQueueName(base: base, labelName: "Inventory", slot: slot), "DYMO_Inventory")
+        XCTAssertEqual(CupsClient.rollOptionArguments("DYMO_Inventory", info: "DYMO Inventory (Left Roll)", slot: "Left", pageSize: "w79h252"),
+                       ["-p", "DYMO_Inventory", "-D", "DYMO Inventory (Left Roll)", "-o", "InputSlot=Left", "-o", "PageSize=w79h252"])
+    }
 }

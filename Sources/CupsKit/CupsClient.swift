@@ -248,18 +248,7 @@ public final class CupsClient: @unchecked Sendable {
     /// CUPS can't rename a queue, so this creates a copy under the new name
     /// (same connection, driver, description and defaults) and removes the old one.
     public func duplicate(_ p: Printer, as newName: String, ppdText: String?, removeOriginal: Bool) async throws {
-        var driver: DriverChoice
-        if let ppdText {
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("queuemaster-\(UUID().uuidString).ppd")
-            let latin1 = ppdText.contains("*LanguageEncoding: ISOLatin1") || ppdText.contains("*LanguageEncoding: WindowsANSI")
-            let data = latin1 ? ppdText.data(using: .isoLatin1, allowLossyConversion: true) : Data(ppdText.utf8)
-            try data?.write(to: url)
-            driver = .ppdFile(url.path)
-        } else if ["ipp", "ipps", "dnssd"].contains(p.scheme) {
-            driver = .model("everywhere")
-        } else {
-            throw CupsError.message("QueueMaster couldn't read this printer's PPD, so it can't copy the driver. Add the new queue with Add Printer instead.")
-        }
+        let driver = try await driverForCopy(of: p, ppdText: ppdText)
         var n = NewPrinter(name: newName, deviceURI: p.deviceURI, driver: driver)
         n.info = p.info == p.name ? newName : p.info
         n.location = p.location
