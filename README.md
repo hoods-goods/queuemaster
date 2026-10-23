@@ -58,7 +58,7 @@ whose .pkg is signed by the same Apple Developer team as the running app and
 accepted by Gatekeeper (signed and notarized); the install uses the normal
 administrator prompt, then the app relaunches.
 
-To publish a release: `git tag v0.2.0 && git push origin v0.2.0`.
+To publish a release, bump the `VERSION` file on main (e.g. `0.2.1`). CI builds, signs and notarizes it and publishes release `v0.2.1`; pushing a `v*` tag works too. Release builds fail rather than publish if the signing secrets are missing.
 
 ### CI
 

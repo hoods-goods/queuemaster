@@ -35,13 +35,24 @@ jobs:
     - name: Version
       id: version
       run: |
+        # The version lives in the VERSION file. A push to main that changes
+        # it to a version with no release yet builds, signs and publishes
+        # release v<VERSION> (tagging that commit). Pushing a v* tag works too.
         if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
           V="${GITHUB_REF#refs/tags/v}"
         else
-          V="0.1.${{ github.run_number }}"
+          V=$(tr -d '[:space:]' < VERSION)
+        fi
+        RELEASE=no
+        if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          RELEASE=yes
+        elif [ "$GITHUB_REF" = refs/heads/main ] && [ "${{ github.event_name }}" = push ] \
+             && [ -z "$(git ls-remote --tags origin "refs/tags/v$V")" ]; then
+          RELEASE=yes
         fi
         echo "VERSION=$V" >> "$GITHUB_OUTPUT"
-        echo "Version $V"
+        echo "RELEASE=$RELEASE" >> "$GITHUB_OUTPUT"
+        echo "Version $V (release: $RELEASE)"
 
     - name: Test
       run: swift test 2>&1 | tee test.log
@@ -105,15 +116,18 @@ jobs:
         if-no-files-found: ignore
 
     - name: Refuse unsigned releases
-      if: startsWith(github.ref, 'refs/tags/v') && steps.sign.outputs.pkg_signed != 'yes'
+      if: steps.version.outputs.RELEASE == 'yes' && steps.sign.outputs.pkg_signed != 'yes'
       run: |
         echo "::error::Release builds must be signed: copy the Developer ID secrets into this repo, then re-run this job."
         exit 1
 
     - name: Release
-      if: startsWith(github.ref, 'refs/tags/v') && steps.sign.outputs.pkg_signed == 'yes'
+      if: steps.version.outputs.RELEASE == 'yes' && steps.sign.outputs.pkg_signed == 'yes'
       uses: softprops/action-gh-release@v2
       with:
+        tag_name: v${{ steps.version.outputs.VERSION }}
+        target_commitish: ${{ github.sha }}
+        name: QueueMaster ${{ steps.version.outputs.VERSION }}
         # The in-app updater installs the .pkg from the latest release.
         files: |
           build/QueueMaster-*.pkg
