@@ -133,6 +133,10 @@ public struct OptionGroup: Identifiable, Hashable, Sendable {
     public var name: String
     public var label: String
     public var options: [PrinterOption]
+
+    public init(name: String, label: String, options: [PrinterOption]) {
+        self.name = name; self.label = label; self.options = options
+    }
 }
 
 public struct PrinterOptions: Sendable {
