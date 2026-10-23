@@ -25,11 +25,12 @@ public enum Parsers {
             let start = k
             while k < s.count, isKeyChar(s[k]) { k += 1 }
             if k == start { return false }
-            if k < s.count, s[k] == "=" { return true }
-            // A bare key (no value) like "printer-location": accept only if it
-            // has a dash, which plain words in a description rarely do.
-            let word = String(s[start..<k])
-            return word.contains("-") && (k >= s.count || s[k] == " ")
+            // A quote straight after another word ("'Zebra 'ZPL'") isn't a close.
+            if j < s.count, s[j] != " " { return false }
+            // The next token must end cleanly: "key=…", a bare key followed by
+            // a space, or the end of the line. "'ZPL' test'" fails this
+            // because "test" runs into another quote.
+            return k >= s.count || s[k] == "=" || s[k] == " "
         }
 
         while i < s.count {

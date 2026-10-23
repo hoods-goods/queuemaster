@@ -18,7 +18,7 @@ final class ParserTests: XCTestCase {
         XCTAssertEqual(p.location, "")
         XCTAssertEqual(p.makeAndModel, "Zebra ZPL Label Printer")
         XCTAssertEqual(p.deviceURI, "socket://10.0.0.20")
-        XCTAssertEqual(p.state, .idle)
+        XCTAssertEqual(p.state, .stopped) // captured while paused
         XCTAssertTrue(p.isShared)
         XCTAssertTrue(p.isAccepting)
         XCTAssertEqual(p.attributes["printer-uri-supported"], "ipp://localhost/printers/Zebra_ZPL")
