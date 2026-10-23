@@ -104,8 +104,14 @@ jobs:
         retention-days: 5
         if-no-files-found: ignore
 
+    - name: Refuse unsigned releases
+      if: startsWith(github.ref, 'refs/tags/v') && steps.sign.outputs.pkg_signed != 'yes'
+      run: |
+        echo "::error::Release builds must be signed: copy the Developer ID secrets into this repo, then re-run this job."
+        exit 1
+
     - name: Release
-      if: startsWith(github.ref, 'refs/tags/v')
+      if: startsWith(github.ref, 'refs/tags/v') && steps.sign.outputs.pkg_signed == 'yes'
       uses: softprops/action-gh-release@v2
       with:
         # The in-app updater installs the .pkg from the latest release.
