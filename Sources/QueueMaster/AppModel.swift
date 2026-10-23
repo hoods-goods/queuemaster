@@ -14,6 +14,7 @@ enum SidebarItem: Hashable {
 @Observable
 final class AppModel {
     let cups = CupsClient()
+    let updater = Updater()
 
     var printers: [Printer] = []
     var selection: SidebarItem?

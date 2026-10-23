@@ -47,6 +47,9 @@ struct ContentView: View {
         .sheet(isPresented: $model.showAddPrinter) {
             AddPrinterView()
         }
+        .sheet(isPresented: Binding(get: { model.updater.showSheet }, set: { model.updater.showSheet = $0 })) {
+            UpdateView()
+        }
         .alert("Something went wrong", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } })

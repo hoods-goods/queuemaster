@@ -49,11 +49,22 @@ open build/QueueMaster.app
 
 Or open `Package.swift` in Xcode and run the `QueueMaster` scheme.
 
+### Installing and updating
+
+Each release has `QueueMaster-<version>.pkg` (installs to /Applications) and
+`QueueMaster.zip`. QueueMaster checks the latest GitHub release once a day
+(QueueMaster → Check for Updates… any time). It only installs an update
+whose .pkg is signed by the same Apple Developer team as the running app and
+accepted by Gatekeeper (signed and notarized); the install uses the normal
+administrator prompt, then the app relaunches.
+
+To publish a release: `git tag v0.2.0 && git push origin v0.2.0`.
+
 ### CI
 
 `.github/workflows/build.yml` runs on the hoods-goods Mac mini runner
 (`self-hosted, refurb-build`): tests and builds on every push and PR; on `main`
-and tags it signs, notarizes and uploads `QueueMaster.zip`. Pushing a tag such
+and tags it signs the app, builds and signs the .pkg, notarizes it and uploads both. Pushing a tag such
 as `v1.0.0` publishes a GitHub release.
 
 Signing uses the same secrets as RefurbStation; add them to this repo (or as

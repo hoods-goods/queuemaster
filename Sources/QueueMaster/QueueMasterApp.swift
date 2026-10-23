@@ -16,9 +16,15 @@ struct QueueMasterApp: App {
             ContentView()
                 .environment(model)
                 .frame(minWidth: 960, minHeight: 600)
-                .task { model.startPolling() }
+                .task {
+                    model.startPolling()
+                    await model.updater.checkInBackgroundIfDue()
+                }
         }
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { Task { await model.updater.check(userInitiated: true) } }
+            }
             CommandGroup(after: .newItem) {
                 Button("Add Printer…") { model.showAddPrinter = true }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
@@ -50,6 +56,9 @@ struct AppSettingsView: View {
             Text("Off: QueueMaster tries each change as you first and only asks for the password if CUPS refuses. On: every change goes straight through the password prompt.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Toggle("Check for updates automatically", isOn: Binding(
+                get: { model.updater.autoCheck }, set: { model.updater.autoCheck = $0 }))
+            LabeledContent("Version", value: model.updater.currentVersion)
             Picker("Refresh printer status every", selection: $model.refreshInterval) {
                 Text("2 seconds").tag(2.0)
                 Text("5 seconds").tag(5.0)
