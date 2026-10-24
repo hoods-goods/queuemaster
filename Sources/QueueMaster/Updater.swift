@@ -136,7 +136,20 @@ final class Updater {
             try await Self.verify(pkg: pkg.path, teamID: teamID)
 
             phase = .installing
-            let r = await Shell.runElevated(["/usr/sbin/installer", "-pkg", pkg.path, "-target", "/"],
+            // The admin script itself quits this copy and opens the new one once
+            // the installer succeeds, so the relaunch doesn't depend on the
+            // password helper reporting back (it sometimes never does, which
+            // left the update sheet stuck on "Installing…").
+            let app = "/Applications/QueueMaster.app"
+            let pid = ProcessInfo.processInfo.processIdentifier
+            let uid = getuid()
+            let relaunchCmd = "sleep 2; kill -TERM \(pid) 2>/dev/null; sleep 2; kill -KILL \(pid) 2>/dev/null; /bin/launchctl asuser \(uid) /usr/bin/open \(Shell.quote(app))"
+            let script = """
+            /usr/sbin/installer -pkg \(Shell.quote(pkg.path)) -target / || exit 1
+            /usr/bin/nohup /bin/bash -c \(Shell.quote(relaunchCmd)) </dev/null >/dev/null 2>&1 &
+            exit 0
+            """
+            let r = await Shell.runElevated(["/bin/bash", "-c", script],
                                             prompt: "QueueMaster wants to install version \(release.version).")
             if r.status == -128 { phase = .available(release); return }
             guard r.ok else { throw CupsError.commandFailed(r) }
@@ -185,12 +198,9 @@ final class Updater {
         return dict[kSecCodeInfoTeamIdentifier as String] as? String
     }
 
+    /// The admin script reopens the new version a couple of seconds after this
+    /// copy quits (and quits it itself if this doesn't get the chance).
     private func relaunch() {
-        let path = "/Applications/QueueMaster.app"
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = ["-c", "sleep 1; /usr/bin/open \(Shell.quote(path))"]
-        try? p.run()
         NSApp.terminate(nil)
     }
 }
