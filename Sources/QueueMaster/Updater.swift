@@ -221,16 +221,19 @@ final class Updater {
 
     private var relaunching = false
 
-    /// Opens the newly installed copy a moment after this one quits.
+    /// Opens the newly installed copy as a separate instance, then quits this one.
+    /// (A helper process started by this app would be stopped by macOS when the
+    /// app quits, so the new copy has to be launched before quitting.)
     private func relaunch() {
         guard !relaunching else { return }
         relaunching = true
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = ["-c", "sleep 2; /usr/bin/open '/Applications/QueueMaster.app'"]
-        try? p.run()
-        NSApp.terminate(nil)
-        // If something holds up a normal quit, don't leave the old copy running.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { exit(0) }
+        let cfg = NSWorkspace.OpenConfiguration()
+        cfg.createsNewApplicationInstance = true
+        cfg.activates = true
+        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: "/Applications/QueueMaster.app"), configuration: cfg) { _, _ in
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
+        // If the launch callback or a normal quit hangs, don't leave the old copy running.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { exit(0) }
     }
 }
