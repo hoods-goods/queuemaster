@@ -149,11 +149,25 @@ final class Updater {
             /usr/bin/nohup /bin/bash -c \(Shell.quote(relaunchCmd)) </dev/null >/dev/null 2>&1 &
             exit 0
             """
+            // Also watch the installed copy: as soon as Applications has the new
+            // version, quit and open it, whether or not the password helper or
+            // the script above ever report back.
+            let watcher = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    if Self.installedVersion() == release.version {
+                        try? await Task.sleep(nanoseconds: 3_000_000_000)   // let the installer finish writing
+                        self?.relaunch()
+                        return
+                    }
+                }
+            }
             let r = await Shell.runElevated(["/bin/bash", "-c", script],
                                             prompt: "QueueMaster wants to install version \(release.version).")
-            if r.status == -128 { phase = .available(release); return }
-            guard r.ok else { throw CupsError.commandFailed(r) }
+            if r.status == -128 { watcher.cancel(); phase = .available(release); return }
+            guard r.ok else { watcher.cancel(); throw CupsError.commandFailed(r) }
             try? FileManager.default.removeItem(at: dir)
+            watcher.cancel()
             relaunch()
         } catch {
             phase = .failed(error.localizedDescription)
@@ -198,9 +212,25 @@ final class Updater {
         return dict[kSecCodeInfoTeamIdentifier as String] as? String
     }
 
-    /// The admin script reopens the new version a couple of seconds after this
-    /// copy quits (and quits it itself if this doesn't get the chance).
+    /// Version of the copy in /Applications (tells us the update has landed).
+    nonisolated static func installedVersion() -> String? {
+        let plist = URL(fileURLWithPath: "/Applications/QueueMaster.app/Contents/Info.plist")
+        guard let d = NSDictionary(contentsOf: plist) else { return nil }
+        return d["CFBundleShortVersionString"] as? String
+    }
+
+    private var relaunching = false
+
+    /// Opens the newly installed copy a moment after this one quits.
     private func relaunch() {
+        guard !relaunching else { return }
+        relaunching = true
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "sleep 2; /usr/bin/open '/Applications/QueueMaster.app'"]
+        try? p.run()
         NSApp.terminate(nil)
+        // If something holds up a normal quit, don't leave the old copy running.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { exit(0) }
     }
 }
