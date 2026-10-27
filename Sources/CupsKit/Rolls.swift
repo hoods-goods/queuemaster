@@ -9,12 +9,20 @@ import Foundation
 /// `PageSize` defaulted to that roll. Picking "DYMO Inventory" in Chrome then
 /// prints on the right roll at the right size.
 ///
-/// Each roll printer is also LOCKED to its roll: its copy of the driver's PPD
-/// offers only that one InputSlot choice. Apps that send their own roll with
-/// a job (DYMO Connect does: its last-used side then sticks for everything),
-/// a user override in ~/.cups/lpoptions, or `lpadmin -o InputSlot=…` can't
-/// change it, because CUPS ignores choices the PPD doesn't have. DYMO's
-/// filter then always sends that roll's select command (ESC q 1 / ESC q 2).
+/// Each roll printer is also LOCKED to its roll, in two ways:
+///
+/// 1. Its copy of the driver's PPD offers only that one InputSlot choice, so
+///    a job, a user override in ~/.cups/lpoptions or `lpadmin -o` can't pick
+///    the other roll: CUPS ignores choices the PPD doesn't have.
+/// 2. The queue has the job default `InputSlot-default=<roll>`, so cupsd adds
+///    `InputSlot=<roll>` to every job that doesn't name one. This matters on
+///    macOS: jobs from the system print path (Chrome, Preview, …) carry
+///    `AP_D_InputSlot=` ("automatic paper feed"), which makes libcups UNMARK
+///    InputSlot. DYMO's filter then finds no roll ("unable to get InputSlot
+///    choice"), sends ESC q 0 (automatic), and the Twin Turbo uses whichever
+///    roll it used last, e.g. DYMO Connect's.
+///
+/// DYMO's filter then always sends that roll's select command (ESC q 1 / ESC q 2).
 public struct RollSlot: Identifiable, Hashable, Sendable {
     public var id: String { keyword }
     /// The `InputSlot` value, e.g. "Left".
@@ -34,9 +42,11 @@ public struct RollQueue: Identifiable, Hashable, Sendable {
     public var locked: Bool = false
     /// The printer whose Rolls tab is open.
     public var isSelf: Bool = false
+    /// Its PPD offers only one roll (`slot`), even if the job default is missing (0.2.5 locks).
+    public var pinned: Bool = false
 
     /// The name or description says which roll it is, e.g. "DYMO Inventory (Left Roll)".
-    func mentions(_ slot: RollSlot) -> Bool {
+    public func mentions(_ slot: RollSlot) -> Bool {
         let text = (name + " " + info).lowercased()
         return text.contains(slot.label.lowercased()) || text.contains("(\(slot.keyword.lowercased()))")
     }
@@ -99,11 +109,11 @@ extension CupsClient {
     /// the slot ("… (Left Roll)") and not another one. The queue's current
     /// default roll isn't trusted on its own: apps such as DYMO Connect change it.
     public static func matchRollQueue(_ slot: RollSlot, allSlots: [RollSlot], in queues: [RollQueue]) -> RollQueue? {
-        if let q = queues.first(where: { $0.locked && $0.slot?.caseInsensitiveCompare(slot.keyword) == .orderedSame }) {
-            return q
-        }
+        func on(_ q: RollQueue) -> Bool { q.slot?.caseInsensitiveCompare(slot.keyword) == .orderedSame }
+        if let q = queues.first(where: { $0.locked && on($0) }) { return q }
+        if let q = queues.first(where: { $0.pinned && on($0) }) { return q }
         let others = allSlots.filter { $0.keyword != slot.keyword }
-        return queues.first { q in !q.locked && q.mentions(slot) && !others.contains(where: { q.mentions($0) }) }
+        return queues.first { q in !q.pinned && q.mentions(slot) && !others.contains(where: { q.mentions($0) }) }
     }
 
     /// Reads which roll and label size each queue on the same device (this printer included) defaults to.
@@ -114,8 +124,10 @@ extension CupsClient {
             result.append(RollQueue(name: p.name, info: p.info,
                                     slot: opts?.lockedRoll ?? opts?.queueDefault("InputSlot"),
                                     pageSize: opts?.queueDefault("PageSize"),
-                                    locked: opts?.lockedRoll != nil,
-                                    isSelf: p.name == printer.name))
+                                    // Locked = PPD offers only that roll AND jobs get it by default.
+                                    locked: opts?.lockedRoll != nil && p.attributes["InputSlot"] == opts?.lockedRoll,
+                                    isSelf: p.name == printer.name,
+                                    pinned: opts?.lockedRoll != nil))
         }
         return result
     }
@@ -123,6 +135,8 @@ extension CupsClient {
     public static func rollOptionArguments(_ queue: String, info: String, slot: String, pageSize: String?) -> [String] {
         var args = ["-p", queue, "-D", info, "-o", "InputSlot=\(slot)"]
         if let pageSize, !pageSize.isEmpty { args += ["-o", "PageSize=\(pageSize)"] }
+        // Added by cupsd to every job that doesn't name a roll (see the note at the top).
+        args += ["-o", "InputSlot-default=\(slot)"]
         return args
     }
 

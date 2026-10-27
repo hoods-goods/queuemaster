@@ -56,8 +56,25 @@ struct RollsView: View {
                 }
                 .formStyle(.grouped)
             } else if let locked = options?.lockedRoll {
-                ContentUnavailableView("Locked to the \(locked.lowercased()) roll", systemImage: "lock.fill",
-                                       description: Text("This printer always prints on the \(locked.lowercased()) roll, whatever other apps ask for. Manage the rolls from the main Twin Turbo printer."))
+                if printer.attributes["InputSlot"] == locked {
+                    ContentUnavailableView("Locked to the \(locked.lowercased()) roll", systemImage: "lock.fill",
+                                           description: Text("This printer always prints on the \(locked.lowercased()) roll, whatever other apps ask for. Manage the rolls from the main Twin Turbo printer."))
+                } else {
+                    ContentUnavailableView {
+                        Label("Only partly locked", systemImage: "exclamationmark.triangle.fill")
+                    } description: {
+                        Text("Jobs from Chrome and other Mac apps can still come out on the other roll. Finish locking so every job is sent to the \(locked.lowercased()) roll.")
+                    } actions: {
+                        Button("Finish Locking") {
+                            Task {
+                                await model.perform("Locking \(printer.name)") {
+                                    try await model.cups.admin("lpadmin", ["-p", printer.name, "-o", "InputSlot-default=\(locked)"])
+                                }
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
             } else {
                 ContentUnavailableView("Single-roll printer", systemImage: "tag",
                                        description: Text(loadError ?? "This printer's driver doesn't offer a choice of rolls."))

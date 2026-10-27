@@ -255,6 +255,10 @@ final class ParserTests: XCTestCase {
         let locked = queues + [RollQueue(name: "Labels", info: "Labels", slot: "Right", pageSize: nil, locked: true)]
         XCTAssertEqual(CupsClient.matchRollQueue(right, allSlots: slots, in: locked)?.name, "Labels")
         XCTAssertNil(CupsClient.matchRollQueue(left, allSlots: slots, in: [queues[0]]))
+        // A 0.2.5 lock (PPD only) is still recognised by its roll, whatever it's called.
+        let pinned = [RollQueue(name: "DYMO_Inventory", info: "DYMO Inventory", slot: "Left", pageSize: nil, pinned: true)]
+        XCTAssertEqual(CupsClient.matchRollQueue(left, allSlots: slots, in: pinned)?.name, "DYMO_Inventory")
+        XCTAssertNil(CupsClient.matchRollQueue(right, allSlots: slots, in: pinned))
         // "(Left)" counts; a name mentioning both rolls doesn't.
         XCTAssertEqual(CupsClient.matchRollQueue(left, allSlots: slots,
                        in: [RollQueue(name: "X", info: "DYMO Mail (Left)", slot: nil, pageSize: nil)])?.name, "X")
@@ -287,6 +291,7 @@ final class ParserTests: XCTestCase {
         let slot = RollSlot(keyword: "Left", label: "Left Roll")
         XCTAssertEqual(CupsClient.suggestedRollQueueName(base: base, labelName: "Inventory", slot: slot), "DYMO_Inventory")
         XCTAssertEqual(CupsClient.rollOptionArguments("DYMO_Inventory", info: "DYMO Inventory (Left Roll)", slot: "Left", pageSize: "w79h252"),
-                       ["-p", "DYMO_Inventory", "-D", "DYMO Inventory (Left Roll)", "-o", "InputSlot=Left", "-o", "PageSize=w79h252"])
+                       ["-p", "DYMO_Inventory", "-D", "DYMO Inventory (Left Roll)", "-o", "InputSlot=Left", "-o", "PageSize=w79h252",
+                        "-o", "InputSlot-default=Left"])
     }
 }
