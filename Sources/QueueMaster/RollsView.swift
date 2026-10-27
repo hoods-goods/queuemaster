@@ -23,9 +23,9 @@ struct RollsView: View {
                         Text("Tell QueueMaster what's loaded on each side. Each roll can have its own printer, set to that side and label size, so Chrome and other apps just pick the printer by name.")
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                        if let mine = queues.first(where: { $0.isSelf }),
+                        if let mine = queues.first(where: { $0.isSelf && !$0.locked }),
                            let slot = options.rollSlots.first(where: { mine.mentions($0) }) {
-                            Label("This is the \(slot.label.lowercased()) printer and it isn't locked yet. Click Save on its card below to lock it.",
+                            Label("This is the \(slot.label.lowercased()) printer and Chrome may print it on the other side. Click Save on its card below to fix it.",
                                   systemImage: "exclamationmark.triangle.fill")
                                 .font(.callout).foregroundStyle(.orange)
                         }
@@ -56,24 +56,20 @@ struct RollsView: View {
                 }
                 .formStyle(.grouped)
             } else if let locked = options?.lockedRoll {
-                if printer.attributes["InputSlot"] == locked {
-                    ContentUnavailableView("Locked to the \(locked.lowercased()) roll", systemImage: "lock.fill",
-                                           description: Text("This printer always prints on the \(locked.lowercased()) roll, whatever other apps ask for. Manage the rolls from the main Twin Turbo printer."))
-                } else {
-                    ContentUnavailableView {
-                        Label("Only partly locked", systemImage: "exclamationmark.triangle.fill")
-                    } description: {
-                        Text("Jobs from Chrome and other Mac apps can still come out on the other roll. Finish locking so every job is sent to the \(locked.lowercased()) roll.")
-                    } actions: {
-                        Button("Finish Locking") {
-                            Task {
-                                await model.perform("Locking \(printer.name)") {
-                                    try await model.cups.admin("lpadmin", ["-p", printer.name, "-o", "InputSlot-default=\(locked)"])
-                                }
+                ContentUnavailableView {
+                    Label("Locked to the \(locked.lowercased()) roll", systemImage: "lock.fill")
+                } description: {
+                    Text("An older QueueMaster locked this printer to one roll. DYMO Connect sends all of the Twin Turbo's jobs through one printer, so a locked one makes it print everything on the \(locked.lowercased()). Unlocking reinstalls the driver and keeps the \(locked.lowercased()) for Chrome.")
+                } actions: {
+                    Button("Unlock") {
+                        Task {
+                            await model.perform("Unlocking \(printer.name)") {
+                                try await model.cups.unlockRollQueue(printer, slot: locked, pageSize: options?.queueDefault("PageSize"))
                             }
+                            await load()
                         }
-                        .buttonStyle(.borderedProminent)
                     }
+                    .buttonStyle(.borderedProminent)
                 }
             } else {
                 ContentUnavailableView("Single-roll printer", systemImage: "tag",
@@ -160,12 +156,16 @@ struct RollCard: View {
                         Text(existing.name).font(.body.monospaced())
                     }
                 }
-                if existing.locked {
-                    Label("Locked to the \(slot.label.lowercased()): other apps, including DYMO Connect, can't switch it.",
-                          systemImage: "lock.fill")
+                if existing.pinned {
+                    Label("Locked to one roll by an older QueueMaster, so DYMO Connect prints everything on the \(slot.label.lowercased()). Click Save to fix it.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.orange)
+                } else if existing.locked {
+                    Label("Chrome and other apps print on the \(slot.label.lowercased()). DYMO Connect can still pick either side.",
+                          systemImage: "checkmark.seal.fill")
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Label("Not locked: an app that picks a roll itself (DYMO Connect does) can switch this printer to the other side. Click Save to lock it.",
+                    Label("Chrome may print on the other side: jobs from Mac apps don't say which roll to use. Click Save to set the \(slot.label.lowercased()) for them.",
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.caption).foregroundStyle(.orange)
                 }
@@ -232,7 +232,7 @@ struct RollCard: View {
         let ok = await model.perform(existing == nil ? "Creating \(name)" : "Saving \(name)") {
             try await model.cups.configureRollQueue(base: base, baseOptions: options, queue: name, info: info,
                                                     slot: slot.keyword, pageSize: pageSize.isEmpty ? nil : pageSize,
-                                                    exists: existing != nil)
+                                                    exists: existing != nil, restorePPD: existing?.pinned == true)
         }
         if ok {
             message = existing == nil ? "Created \(name)." : "Saved."

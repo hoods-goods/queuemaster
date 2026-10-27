@@ -9,20 +9,20 @@ import Foundation
 /// `PageSize` defaulted to that roll. Picking "DYMO Inventory" in Chrome then
 /// prints on the right roll at the right size.
 ///
-/// Each roll printer is also LOCKED to its roll, in two ways:
+/// Each roll printer also has the job default `InputSlot-default=<roll>`, so
+/// cupsd adds `InputSlot=<roll>` to every job that doesn't name a roll. This
+/// matters on macOS: jobs from the system print path (Chrome, Preview, …)
+/// carry `AP_D_InputSlot=` ("automatic paper feed"), which makes libcups
+/// UNMARK InputSlot. DYMO's filter then finds no roll ("unable to get
+/// InputSlot choice"), sends ESC q 0 (automatic), and the Twin Turbo uses
+/// whichever roll it used last.
 ///
-/// 1. Its copy of the driver's PPD offers only that one InputSlot choice, so
-///    a job, a user override in ~/.cups/lpoptions or `lpadmin -o` can't pick
-///    the other roll: CUPS ignores choices the PPD doesn't have.
-/// 2. The queue has the job default `InputSlot-default=<roll>`, so cupsd adds
-///    `InputSlot=<roll>` to every job that doesn't name one. This matters on
-///    macOS: jobs from the system print path (Chrome, Preview, …) carry
-///    `AP_D_InputSlot=` ("automatic paper feed"), which makes libcups UNMARK
-///    InputSlot. DYMO's filter then finds no roll ("unable to get InputSlot
-///    choice"), sends ESC q 0 (automatic), and the Twin Turbo uses whichever
-///    roll it used last, e.g. DYMO Connect's.
-///
-/// DYMO's filter then always sends that roll's select command (ESC q 1 / ESC q 2).
+/// Roll printers keep the driver's full PPD (both rolls). An app that names a
+/// roll still gets it: DYMO Connect sends all of a Twin Turbo's jobs through
+/// ONE of its CUPS queues (whichever it claimed) with the side picked in DYMO
+/// Connect, so a queue locked to one roll (0.2.5–0.2.7, see `lockedPPD`)
+/// made DYMO Connect print everything on that side. Saving a roll printer
+/// now restores the full PPD.
 public struct RollSlot: Identifiable, Hashable, Sendable {
     public var id: String { keyword }
     /// The `InputSlot` value, e.g. "Left".
@@ -42,7 +42,7 @@ public struct RollQueue: Identifiable, Hashable, Sendable {
     public var locked: Bool = false
     /// The printer whose Rolls tab is open.
     public var isSelf: Bool = false
-    /// Its PPD offers only one roll (`slot`), even if the job default is missing (0.2.5 locks).
+    /// Its PPD offers only one roll (`slot`): a 0.2.5–0.2.7 lock, which makes DYMO Connect print on that side only.
     public var pinned: Bool = false
 
     /// The name or description says which roll it is, e.g. "DYMO Inventory (Left Roll)".
@@ -110,7 +110,7 @@ extension CupsClient {
     /// default roll isn't trusted on its own: apps such as DYMO Connect change it.
     public static func matchRollQueue(_ slot: RollSlot, allSlots: [RollSlot], in queues: [RollQueue]) -> RollQueue? {
         func on(_ q: RollQueue) -> Bool { q.slot?.caseInsensitiveCompare(slot.keyword) == .orderedSame }
-        if let q = queues.first(where: { $0.locked && on($0) }) { return q }
+        if let q = queues.first(where: { $0.locked && on($0) && (!$0.isSelf || $0.mentions(slot)) }) { return q }
         if let q = queues.first(where: { $0.pinned && on($0) }) { return q }
         let others = allSlots.filter { $0.keyword != slot.keyword }
         return queues.first { q in !q.pinned && q.mentions(slot) && !others.contains(where: { q.mentions($0) }) }
@@ -122,10 +122,12 @@ extension CupsClient {
         for p in [printer] + Self.siblings(of: printer, in: printers) {
             let opts = try? await options(for: p.name)
             result.append(RollQueue(name: p.name, info: p.info,
-                                    slot: opts?.lockedRoll ?? opts?.queueDefault("InputSlot"),
+                                    slot: opts?.lockedRoll ?? p.attributes["InputSlot"].flatMap { $0.isEmpty ? nil : $0 }
+                                        ?? opts?.queueDefault("InputSlot"),
                                     pageSize: opts?.queueDefault("PageSize"),
-                                    // Locked = PPD offers only that roll AND jobs get it by default.
-                                    locked: opts?.lockedRoll != nil && p.attributes["InputSlot"] == opts?.lockedRoll,
+                                    // "locked" = jobs that name no roll get this one (the job default is set).
+                                    locked: !(p.attributes["InputSlot"] ?? "").isEmpty
+                                        && (opts?.lockedRoll == nil || p.attributes["InputSlot"] == opts?.lockedRoll),
                                     isSelf: p.name == printer.name,
                                     pinned: opts?.lockedRoll != nil))
         }
@@ -143,29 +145,40 @@ extension CupsClient {
     /// Creates a queue for one roll of `base`, or updates it if it exists.
     /// When the base printer's PPD is readable, the queue gets a copy locked
     /// to `slot` (see `lockedPPD`), installed again on every save.
+    /// `restorePPD`: the queue was locked to one roll by 0.2.5–0.2.7, so it gets
+    /// the base printer's full PPD back.
     public func configureRollQueue(base: Printer, baseOptions: PrinterOptions, queue: String, info: String,
-                                   slot: String, pageSize: String?, exists: Bool) async throws {
-        var lockedFile: String?
-        if let ppd = baseOptions.ppdText {
-            lockedFile = try Self.writePPD(Self.lockedPPD(ppd, slot: slot))
+                                   slot: String, pageSize: String?, exists: Bool, restorePPD: Bool = false) async throws {
+        var fullFile: String?
+        if let ppd = baseOptions.ppdText, !exists || restorePPD {
+            fullFile = try Self.writePPD(ppd)
         }
-        defer { if let lockedFile { try? FileManager.default.removeItem(atPath: lockedFile) } }
+        defer { if let fullFile { try? FileManager.default.removeItem(atPath: fullFile) } }
 
         if !exists {
             let driver: DriverChoice
-            if let lockedFile { driver = .ppdFile(lockedFile) }
-            else { driver = try await driverForCopy(of: base, ppdText: baseOptions.ppdText) }
+            if let fullFile { driver = .ppdFile(fullFile) }
+            else { driver = try await driverForCopy(of: base, ppdText: nil) }
             var n = NewPrinter(name: queue, deviceURI: base.deviceURI, driver: driver)
             n.info = info
             n.location = base.location
             try await add(n)
-        } else if let lockedFile {
+        } else if restorePPD {
             // Replacing the PPD resets its defaults; they're set again just below.
-            try await admin("lpadmin", ["-p", queue, "-P", lockedFile], timeout: 120)
+            if let fullFile { try await admin("lpadmin", ["-p", queue, "-P", fullFile], timeout: 120) }
+            else { try await changeDriver(queue, to: try await driverForCopy(of: base, ppdText: nil)) }
         }
         try await admin("lpadmin", Self.rollOptionArguments(queue, info: info, slot: slot, pageSize: pageSize))
-        // A per-user roll override would be ignored by a locked queue anyway; drop it so the Options tab is honest.
+        // A per-user roll override in ~/.cups/lpoptions would beat the job default for this account.
         _ = await read("lpoptions", ["-p", queue, "-r", "InputSlot"])
+    }
+
+    /// Undoes a 0.2.5–0.2.7 single-roll lock on `printer` (a roll printer) by
+    /// reinstalling its installed driver, then sets its roll and job default.
+    public func unlockRollQueue(_ printer: Printer, slot: String, pageSize: String?) async throws {
+        try await changeDriver(printer.name, to: try await driverForCopy(of: printer, ppdText: nil))
+        try await admin("lpadmin", Self.rollOptionArguments(printer.name, info: printer.info, slot: slot, pageSize: pageSize))
+        _ = await read("lpoptions", ["-p", printer.name, "-r", "InputSlot"])
     }
 
     /// Writes PPD text to a temporary file in the encoding it declares.
