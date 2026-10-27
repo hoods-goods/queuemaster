@@ -239,6 +239,29 @@ final class ParserTests: XCTestCase {
         XCTAssertEqual(Parsers.ppd(locked).flatMap(\.options).first { $0.key == "InputSlot" }?.choices.map(\.keyword), ["Left"])
     }
 
+    func testMatchesRollPrintersByNameNotByTheirCurrentDefault() {
+        let left = RollSlot(keyword: "Left", label: "Left Roll"), right = RollSlot(keyword: "Right", label: "Right Roll")
+        let slots = [left, right]
+        // After DYMO Connect, both roll printers' defaults read "Left" (or Auto).
+        let queues = [
+            RollQueue(name: "DYMO_LabelWriter_450_Twin_Turbo", info: "DYMO LabelWriter 450 Twin Turbo", slot: "Left", pageSize: nil),
+            RollQueue(name: "DYMO_Mini", info: "DYMO Mini (Left Roll)", slot: "Auto", pageSize: nil, isSelf: true),
+            RollQueue(name: "DYMO_Inventory", info: "DYMO Inventory (Right Roll)", slot: "Left", pageSize: nil),
+        ]
+        XCTAssertEqual(CupsClient.matchRollQueue(left, allSlots: slots, in: queues)?.name, "DYMO_Mini")
+        XCTAssertEqual(CupsClient.matchRollQueue(right, allSlots: slots, in: queues)?.name, "DYMO_Inventory")
+
+        // A locked printer wins, whatever it's called; the main printer is never picked.
+        let locked = queues + [RollQueue(name: "Labels", info: "Labels", slot: "Right", pageSize: nil, locked: true)]
+        XCTAssertEqual(CupsClient.matchRollQueue(right, allSlots: slots, in: locked)?.name, "Labels")
+        XCTAssertNil(CupsClient.matchRollQueue(left, allSlots: slots, in: [queues[0]]))
+        // "(Left)" counts; a name mentioning both rolls doesn't.
+        XCTAssertEqual(CupsClient.matchRollQueue(left, allSlots: slots,
+                       in: [RollQueue(name: "X", info: "DYMO Mail (Left)", slot: nil, pageSize: nil)])?.name, "X")
+        XCTAssertNil(CupsClient.matchRollQueue(left, allSlots: slots,
+                     in: [RollQueue(name: "X", info: "Left Roll and Right Roll", slot: nil, pageSize: nil)]))
+    }
+
     func testOfficeTraysAreNotRolls() {
         var input = PrinterOption(key: "InputSlot", label: "Paper Source")
         input.choices = [

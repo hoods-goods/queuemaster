@@ -23,10 +23,16 @@ struct RollsView: View {
                         Text("Tell QueueMaster what's loaded on each side. Each roll can have its own printer, set to that side and label size, so Chrome and other apps just pick the printer by name.")
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                        if let mine = queues.first(where: { $0.isSelf }),
+                           let slot = options.rollSlots.first(where: { mine.mentions($0) }) {
+                            Label("This is the \(slot.label.lowercased()) printer and it isn't locked yet. Click Save on its card below to lock it.",
+                                  systemImage: "exclamationmark.triangle.fill")
+                                .font(.callout).foregroundStyle(.orange)
+                        }
                     }
                     ForEach(options.rollSlots) { slot in
                         RollCard(base: printer, options: options, slot: slot,
-                                 existing: queues.first { $0.slot == slot.keyword },
+                                 existing: CupsClient.matchRollQueue(slot, allSlots: options.rollSlots, in: queues),
                                  onSaved: { Task { await load() } })
                     }
                     if !otherSiblings(options).isEmpty {
@@ -49,6 +55,9 @@ struct RollsView: View {
                     }
                 }
                 .formStyle(.grouped)
+            } else if let locked = options?.lockedRoll {
+                ContentUnavailableView("Locked to the \(locked.lowercased()) roll", systemImage: "lock.fill",
+                                       description: Text("This printer always prints on the \(locked.lowercased()) roll, whatever other apps ask for. Manage the rolls from the main Twin Turbo printer."))
             } else {
                 ContentUnavailableView("Single-roll printer", systemImage: "tag",
                                        description: Text(loadError ?? "This printer's driver doesn't offer a choice of rolls."))
@@ -58,15 +67,12 @@ struct RollsView: View {
     }
 
     private func otherSiblings(_ options: PrinterOptions) -> [RollQueue] {
-        let slots = Set(options.rollSlots.map(\.keyword))
-        return queues.filter { q in
-            guard let s = q.slot else { return true }
-            return !slots.contains(s) || queues.filter { $0.slot == s }.first?.name != q.name
-        }
+        let matched = Set(options.rollSlots.compactMap { CupsClient.matchRollQueue($0, allSlots: options.rollSlots, in: queues)?.name })
+        return queues.filter { !$0.isSelf && !matched.contains($0.name) }
     }
 
     private func sampleName(_ options: PrinterOptions) -> String {
-        queues.first(where: { $0.slot != nil && options.rollSlots.map(\.keyword).contains($0.slot!) })?.info
+        options.rollSlots.lazy.compactMap { CupsClient.matchRollQueue($0, allSlots: options.rollSlots, in: queues)?.info }.first
             ?? "DYMO Inventory"
     }
 

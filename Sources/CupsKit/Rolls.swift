@@ -32,6 +32,14 @@ public struct RollQueue: Identifiable, Hashable, Sendable {
     public var pageSize: String?
     /// The queue's PPD offers only this roll, so nothing can switch it.
     public var locked: Bool = false
+    /// The printer whose Rolls tab is open.
+    public var isSelf: Bool = false
+
+    /// The name or description says which roll it is, e.g. "DYMO Inventory (Left Roll)".
+    func mentions(_ slot: RollSlot) -> Bool {
+        let text = (name + " " + info).lowercased()
+        return text.contains(slot.label.lowercased()) || text.contains("(\(slot.keyword.lowercased()))")
+    }
 }
 
 public extension PrinterOptions {
@@ -86,15 +94,28 @@ extension CupsClient {
         return norm(a) == norm(b)
     }
 
-    /// Reads which roll and label size each sibling queue defaults to.
+    /// The roll printer for `slot` among the queues on one device. A queue
+    /// locked to the slot wins; otherwise one whose name or description names
+    /// the slot ("… (Left Roll)") and not another one. The queue's current
+    /// default roll isn't trusted on its own: apps such as DYMO Connect change it.
+    public static func matchRollQueue(_ slot: RollSlot, allSlots: [RollSlot], in queues: [RollQueue]) -> RollQueue? {
+        if let q = queues.first(where: { $0.locked && $0.slot?.caseInsensitiveCompare(slot.keyword) == .orderedSame }) {
+            return q
+        }
+        let others = allSlots.filter { $0.keyword != slot.keyword }
+        return queues.first { q in !q.locked && q.mentions(slot) && !others.contains(where: { q.mentions($0) }) }
+    }
+
+    /// Reads which roll and label size each queue on the same device (this printer included) defaults to.
     public func rollQueues(for printer: Printer, in printers: [Printer]) async -> [RollQueue] {
         var result: [RollQueue] = []
-        for p in Self.siblings(of: printer, in: printers) {
+        for p in [printer] + Self.siblings(of: printer, in: printers) {
             let opts = try? await options(for: p.name)
             result.append(RollQueue(name: p.name, info: p.info,
                                     slot: opts?.lockedRoll ?? opts?.queueDefault("InputSlot"),
                                     pageSize: opts?.queueDefault("PageSize"),
-                                    locked: opts?.lockedRoll != nil))
+                                    locked: opts?.lockedRoll != nil,
+                                    isSelf: p.name == printer.name))
         }
         return result
     }
