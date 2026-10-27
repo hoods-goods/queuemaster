@@ -137,6 +137,15 @@ struct RollCard: View {
                         Text(existing.name).font(.body.monospaced())
                     }
                 }
+                if existing.locked {
+                    Label("Locked to the \(slot.label.lowercased()): other apps, including DYMO Connect, can't switch it.",
+                          systemImage: "lock.fill")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Label("Not locked: an app that picks a roll itself (DYMO Connect does) can switch this printer to the other side. Click Save to lock it.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.orange)
+                }
             } else {
                 TextField("Queue name", text: Binding(get: { queueName }, set: { queueName = $0; nameEdited = true }))
                     .font(.body.monospaced())

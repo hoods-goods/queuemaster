@@ -187,6 +187,58 @@ final class ParserTests: XCTestCase {
         XCTAssertTrue(none.rollSlots.isEmpty)
     }
 
+    func testLockedPPDOffersOnlyItsRoll() throws {
+        let original = try fixture("dymo_twin_turbo.ppd")
+        let locked = CupsClient.lockedPPD(original, slot: "Left")
+        let opts = PrinterOptions(groups: Parsers.ppd(locked), source: "", ppdText: locked)
+        let input = try XCTUnwrap(opts.all.first { $0.key == "InputSlot" })
+        XCTAssertEqual(input.choices.map(\.keyword), ["Left"])
+        XCTAssertEqual(input.queueDefault, "Left")
+        XCTAssertEqual(opts.lockedRoll, "Left")
+        XCTAssertTrue(opts.rollSlots.isEmpty, "a locked roll printer doesn't get its own Rolls tab")
+        XCTAssertFalse(locked.contains("*InputSlot Right"))
+        XCTAssertFalse(locked.contains("*InputSlot Auto"))
+        XCTAssertFalse(locked.contains("*de.InputSlot Right"), "translations of removed choices go too")
+        XCTAssertTrue(locked.contains("*de.InputSlot Left/Linke Etikettenrolle"))
+        XCTAssertTrue(locked.contains("*de.Translation InputSlot/Papierquelle"))
+        // Everything else is untouched.
+        let before = PrinterOptions(groups: Parsers.ppd(original), source: "", ppdText: original)
+        XCTAssertEqual(opts.pageSizeOption?.choices.count, before.pageSizeOption?.choices.count)
+        XCTAssertEqual(opts.all.count, before.all.count)
+        XCTAssertEqual(original.components(separatedBy: "\n").count - locked.components(separatedBy: "\n").count,
+                       original.components(separatedBy: "\n").filter { $0.contains("InputSlot Auto") || $0.contains("InputSlot Right") }.count,
+                       "only the other rolls' lines are removed")
+        XCTAssertNil(before.lockedRoll, "the original Twin Turbo isn't locked")
+
+        let right = CupsClient.lockedPPD(original, slot: "Right")
+        XCTAssertEqual(PrinterOptions(groups: Parsers.ppd(right), source: "", ppdText: right).lockedRoll, "Right")
+    }
+
+    func testLockedPPDHandlesMultiLineValuesAndConstraints() {
+        let ppd = """
+        *PPD-Adobe: "4.3"
+        *UIConstraints: *InputSlot Right *PageSize w79h252
+        *UIConstraints: *InputSlot Left *PageSize w79h252
+        *OpenUI *InputSlot/Media Source: PickOne
+        *DefaultInputSlot: Auto
+        *InputSlot Auto/Auto: "<</cupsMediaPosition 0>>setpagedevice"
+        *InputSlot Left/Left Roll: "<</cupsMediaPosition 1>>setpagedevice"
+        *InputSlot Right/Right Roll: "<<
+          /cupsMediaPosition 2
+        >>setpagedevice"
+        *End
+        *CloseUI: *InputSlot
+        """
+        let locked = CupsClient.lockedPPD(ppd, slot: "Left")
+        XCTAssertFalse(locked.contains("cupsMediaPosition 2"), "multi-line value of a removed choice is skipped")
+        XCTAssertFalse(locked.contains("*End"), "and its *End line")
+        XCTAssertFalse(locked.contains("*InputSlot Right *PageSize"), "constraint naming a removed choice is dropped")
+        XCTAssertTrue(locked.contains("*UIConstraints: *InputSlot Left *PageSize w79h252"))
+        XCTAssertTrue(locked.contains("*DefaultInputSlot: Left"))
+        XCTAssertTrue(locked.contains("*CloseUI: *InputSlot"))
+        XCTAssertEqual(Parsers.ppd(locked).flatMap(\.options).first { $0.key == "InputSlot" }?.choices.map(\.keyword), ["Left"])
+    }
+
     func testOfficeTraysAreNotRolls() {
         var input = PrinterOption(key: "InputSlot", label: "Paper Source")
         input.choices = [
